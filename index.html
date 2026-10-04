@@ -4,14 +4,20 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>HPRCA Digi OMR Simulator</title>
-    <!-- html2canvas for exporting OMR as Image -->
+    <!-- html2canvas for exporting image -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+    <!-- PDF.js for rendering PDFs inside mobile browsers -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.min.js"></script>
     <style>
         :root {
             --bg-color: #f4f6f9;
-            --bubble-selected: #7f8c8d; /* Light black/gray */
+            --bubble-selected: #7f8c8d; /* Light black */
             --bubble-locked: #1e272e;   /* Dark black */
-            --bubble-review: #2980b9;   /* Review Blue */
+            --bubble-review: #2980b9;   /* Blue */
+        }
+
+        * {
+            box-sizing: border-box;
         }
 
         body {
@@ -22,6 +28,7 @@
             display: flex;
             flex-direction: column;
             height: 100vh;
+            overflow: hidden;
         }
 
         header {
@@ -33,19 +40,24 @@
             align-items: center;
         }
 
-        .controls {
-            display: flex;
-            gap: 15px;
-            align-items: center;
-        }
-
         #timer {
-            font-size: 1.2rem;
+            font-size: 1.1rem;
             font-weight: bold;
             color: #f1c40f;
-            background: #0002;
-            padding: 5px 12px;
+            background: rgba(0,0,0,0.3);
+            padding: 6px 14px;
             border-radius: 4px;
+        }
+
+        #setup-bar {
+            padding: 8px 15px;
+            background: #ecf0f1;
+            display: flex;
+            gap: 12px;
+            align-items: center;
+            font-size: 0.9rem;
+            flex-wrap: wrap;
+            border-bottom: 1px solid #ccc;
         }
 
         .container {
@@ -55,56 +67,66 @@
             overflow: hidden;
         }
 
-        /* Question Paper Display */
+        /* Question Paper Viewer */
         #paper-viewer {
             flex: 1;
-            border-bottom: 3px solid #ccc;
-            background: #fff;
-            overflow: auto;
-            padding: 15px;
-            position: relative;
-        }
-
-        #paper-viewer embed, #paper-viewer iframe {
-            width: 100%;
-            height: 100%;
-            border: none;
-        }
-
-        /* Digi OMR Grid Display */
-        #omr-container {
-            height: 45vh;
-            background: #ffffff;
-            padding: 15px;
+            background: #525659;
             overflow-y: auto;
+            padding: 10px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+
+        .pdf-page-canvas {
+            margin-bottom: 10px;
+            box-shadow: 0 3px 6px rgba(0,0,0,0.3);
+            background: #fff;
+            max-width: 100%;
+            height: auto !important;
+        }
+
+        /* Digi OMR Container */
+        #omr-container {
+            height: 48vh;
+            background: #ffffff;
+            padding: 10px;
+            overflow-x: auto;
+            overflow-y: auto;
+            border-top: 3px solid #2c3e50;
             box-shadow: 0 -2px 10px rgba(0,0,0,0.1);
         }
 
+        /* Column-first Vertical Question Sequence Grid */
         .omr-grid {
             display: grid;
-            grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-            gap: 12px;
+            grid-auto-flow: column;
+            grid-template-rows: repeat(10, auto); /* 10 items per vertical column */
+            gap: 8px 20px;
+            width: max-content;
         }
 
         .omr-row {
             display: flex;
             align-items: center;
             background: #f8f9fa;
-            padding: 6px 12px;
+            padding: 4px 8px;
             border-radius: 6px;
             border: 1px solid #e2e8f0;
             user-select: none;
+            width: 240px;
         }
 
         .q-num {
-            width: 45px;
+            width: 36px;
             font-weight: bold;
             cursor: pointer;
-            padding: 4px;
+            padding: 4px 0;
             border-radius: 4px;
             text-align: center;
             background: #e9ecef;
-            margin-right: 10px;
+            margin-right: 8px;
+            font-size: 0.9rem;
         }
 
         .q-num.marked-review {
@@ -114,12 +136,12 @@
 
         .options {
             display: flex;
-            gap: 12px;
+            gap: 8px;
         }
 
         .bubble {
-            width: 32px;
-            height: 32px;
+            width: 30px;
+            height: 30px;
             border-radius: 50%;
             border: 2px solid #7f8c8d;
             display: flex;
@@ -127,8 +149,9 @@
             justify-content: center;
             font-weight: bold;
             cursor: pointer;
-            transition: all 0.2s ease;
+            transition: all 0.15s ease;
             background: #fff;
+            font-size: 0.85rem;
         }
 
         .bubble.selected {
@@ -141,27 +164,27 @@
             background-color: var(--bubble-locked) !important;
             color: #fff !important;
             border-color: var(--bubble-locked) !important;
-            box-shadow: inset 0 0 5px rgba(255,255,255,0.5);
+            box-shadow: inset 0 0 4px rgba(255,255,255,0.6);
         }
 
-        /* Config Modal / Setup Bar */
-        #setup-bar {
-            padding: 10px 20px;
-            background: #ecf0f1;
+        footer {
+            padding: 8px 15px;
+            background: #fff;
             display: flex;
-            gap: 15px;
-            flex-wrap: wrap;
+            justify-content: space-between;
             align-items: center;
+            border-top: 1px solid #ddd;
         }
 
         button {
             cursor: pointer;
-            padding: 6px 14px;
+            padding: 6px 12px;
             background: #27ae60;
             color: white;
             border: none;
             border-radius: 4px;
             font-weight: bold;
+            font-size: 0.85rem;
         }
 
         button:hover { background: #219150; }
@@ -170,19 +193,19 @@
 <body>
 
 <header>
-    <h2>Digi OMR Practice Simulator</h2>
+    <h3 style="margin:0;">HPRCA Digi OMR Practice Simulator</h3>
     <div id="timer">Time Remaining: 00:00</div>
 </header>
 
 <div id="setup-bar">
-    <label>Load Question Paper (PDF/TXT/JSON/MD): 
+    <label>Question Paper: 
         <input type="file" id="fileInput" accept=".pdf,.txt,.md,.json">
     </label>
     <label>Test Mode:
         <select id="testMode" onchange="setupTestMode()">
-            <option value="120-90">120 Questions (90 Min)</option>
-            <option value="60-45">60 Questions (45 Min)</option>
-            <option value="30-22.5">30 Questions (22.5 Min)</option>
+            <option value="120-90">120 Qs (90 Min)</option>
+            <option value="60-45">60 Qs (45 Min)</option>
+            <option value="30-22.5">30 Qs (22.5 Min)</option>
         </select>
     </label>
     <button onclick="startTest()">Start Test</button>
@@ -190,8 +213,8 @@
 
 <div class="container">
     <div id="paper-viewer">
-        <p style="text-align:center; color:#7f8c8d; margin-top: 50px;">
-            Upload a question paper above to view it here.
+        <p style="text-align:center; color:#fff; margin-top: 40px;">
+            Please upload your question paper above.
         </p>
     </div>
 
@@ -200,22 +223,27 @@
     </div>
 </div>
 
-<div style="padding: 10px 20px; background: #fff; display: flex; justify-content: space-between;">
+<footer>
     <div>
-        <label><input type="checkbox" id="enableNegative"> Enable Marking (+1 / -0.25)</label>
+        <label style="font-size: 0.85rem;">
+            <input type="checkbox" id="enableNegative"> Enable Marking (+1 / -0.25)
+        </label>
     </div>
     <div>
         <button onclick="submitTest()" style="background:#c0392b;">Submit Test</button>
         <button onclick="exportAsTXT()" style="background:#2980b9;">Download TXT</button>
         <button onclick="exportAsImage()" style="background:#8e44ad;">Download Image</button>
     </div>
-</div>
+</footer>
 
 <script>
+    // Initialize PDF.js worker
+    pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.worker.min.js';
+
     let totalQuestions = 120;
     let timeInMinutes = 90;
     let timerInterval = null;
-    let omrData = {}; // Stores state: { qNum: { selected: 'A', locked: false, review: false } }
+    let omrData = {};
 
     function setupTestMode() {
         const mode = document.getElementById('testMode').value.split('-');
@@ -229,6 +257,10 @@
         grid.innerHTML = '';
         omrData = {};
 
+        // Set vertical columns of 10 rows each
+        const rowsPerCol = 10;
+        grid.style.gridTemplateRows = `repeat(${rowsPerCol}, auto)`;
+
         for (let i = 1; i <= totalQuestions; i++) {
             omrData[i] = { selected: null, locked: false, review: false };
 
@@ -238,8 +270,8 @@
             const qNum = document.createElement('div');
             qNum.className = 'q-num';
             qNum.innerText = i;
-            
-            // Gesture: Long press question number (1.5s) to Mark for Review
+
+            // Long Press (1.5s) to Mark for Review
             attachLongPress(qNum, () => toggleReview(i, qNum), 1500);
 
             const optionsDiv = document.createElement('div');
@@ -249,13 +281,11 @@
                 const bubble = document.createElement('div');
                 bubble.className = 'bubble';
                 bubble.innerText = opt;
-                bubble.dataset.q = i;
-                bubble.dataset.opt = opt;
 
-                // Click / Tap Handler
-                bubble.addEventListener('click', (e) => handleTap(i, opt, bubble));
+                // Click/Tap Selection
+                bubble.addEventListener('click', () => handleTap(i, opt, bubble));
 
-                // Gesture: 2-second Hold to Lock/Unlock
+                // 2-Second Long Press for Lock/Unlock
                 attachLongPress(bubble, () => toggleLock(i, opt, bubble), 2000);
 
                 optionsDiv.appendChild(bubble);
@@ -268,13 +298,13 @@
     }
 
     function handleTap(q, opt, el) {
-        if (omrData[q].locked) return; // Ignore taps if option is locked
+        if (omrData[q].locked) return;
 
         const parent = el.parentElement;
         parent.querySelectorAll('.bubble').forEach(b => b.classList.remove('selected'));
 
         if (omrData[q].selected === opt) {
-            omrData[q].selected = null; // Unselect if tapped again
+            omrData[q].selected = null;
         } else {
             omrData[q].selected = opt;
             el.classList.add('selected');
@@ -282,14 +312,10 @@
     }
 
     function toggleLock(q, opt, el) {
-        if (!omrData[q].selected || omrData[q].selected !== opt) return; // Only lock if currently selected
+        if (omrData[q].selected !== opt) return;
 
         omrData[q].locked = !omrData[q].locked;
-        if (omrData[q].locked) {
-            el.classList.add('locked');
-        } else {
-            el.classList.remove('locked');
-        }
+        el.classList.toggle('locked', omrData[q].locked);
     }
 
     function toggleReview(q, el) {
@@ -297,27 +323,23 @@
         el.classList.toggle('marked-review', omrData[q].review);
     }
 
-    // Helper for Press & Hold Gesture
     function attachLongPress(element, callback, duration) {
         let timer = null;
-
-        const start = () => {
+        const start = (e) => {
             timer = setTimeout(callback, duration);
         };
-
         const cancel = () => {
             if (timer) clearTimeout(timer);
         };
 
         element.addEventListener('mousedown', start);
-        element.addEventListener('touchstart', start);
-
+        element.addEventListener('touchstart', start, { passive: true });
         element.addEventListener('mouseup', cancel);
         element.addEventListener('mouseleave', cancel);
         element.addEventListener('touchend', cancel);
     }
 
-    // File Upload Handler (PDF / TXT / Markdown)
+    // Canvas PDF Rendering Engine for Mobile Devices
     document.getElementById('fileInput').addEventListener('change', function(e) {
         const file = e.target.files[0];
         if (!file) return;
@@ -326,15 +348,37 @@
         viewer.innerHTML = '';
 
         if (file.type === 'application/pdf') {
-            const embed = document.createElement('embed');
-            embed.src = URL.createObjectURL(file);
-            embed.type = 'application/pdf';
-            viewer.appendChild(embed);
+            const fileReader = new FileReader();
+            fileReader.onload = function() {
+                const typedarray = new Uint8Array(this.result);
+                pdfjsLib.getDocument(typedarray).promise.then(pdf => {
+                    for (let pageNum = 1; pageNum <= pdf.numPages; pageNum++) {
+                        pdf.getPage(pageNum).then(page => {
+                            const canvas = document.createElement('canvas');
+                            canvas.className = 'pdf-page-canvas';
+                            const context = canvas.getContext('2d');
+                            const viewport = page.getViewport({ scale: 1.5 });
+
+                            canvas.height = viewport.height;
+                            canvas.width = viewport.width;
+
+                            viewer.appendChild(canvas);
+
+                            page.render({
+                                canvasContext: context,
+                                viewport: viewport
+                            });
+                        });
+                    }
+                });
+            };
+            fileReader.readAsArrayBuffer(file);
         } else {
             const reader = new FileReader();
             reader.onload = function(evt) {
                 const pre = document.createElement('pre');
                 pre.style.whiteSpace = 'pre-wrap';
+                pre.style.color = '#fff';
                 pre.innerText = evt.target.result;
                 viewer.appendChild(pre);
             };
@@ -342,7 +386,6 @@
         }
     });
 
-    // Timer Logic
     function startTest() {
         let totalSeconds = timeInMinutes * 60;
         clearInterval(timerInterval);
@@ -356,7 +399,7 @@
 
             if (totalSeconds <= 0) {
                 clearInterval(timerInterval);
-                alert("Time up! Submitting test...");
+                alert("Time limit reached! Submitting OMR sheet...");
                 submitTest();
             }
             totalSeconds--;
@@ -365,21 +408,18 @@
 
     function submitTest() {
         clearInterval(timerInterval);
-        alert("Test Submitted successfully!");
+        alert("Test Submitted!");
     }
 
-    // Export Options
     function exportAsTXT() {
-        let content = "HPRCA Digi OMR - Response Sheet\n";
-        content += "=================================\n\n";
+        let content = "HPRCA Digi OMR - Response Sheet\n=================================\n\n";
         for (let q in omrData) {
-            content += `Q${q}: Option =${omrData[q].selected || 'Unattempted'} | Locked = ${omrData[q].locked} \vert{} Review =${omrData[q].review}\n`;
+            content += `Q${q}: Answer = ${omrData[q].selected || 'Unattempted'} | Locked = ${omrData[q].locked} | Review = ${omrData[q].review}\n`;
         }
-
         const blob = new Blob([content], { type: 'text/plain' });
         const a = document.createElement('a');
         a.href = URL.createObjectURL(blob);
-        a.download = `Digi_OMR_Responses_${Date.now()}.txt`;
+        a.download = `Digi_OMR_Result_${Date.now()}.txt`;
         a.click();
     }
 
@@ -392,7 +432,6 @@
         });
     }
 
-    // Initialize default state
     setupTestMode();
 </script>
 </body>
