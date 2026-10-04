@@ -1,0 +1,399 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>HPRCA Digi OMR Simulator</title>
+    <!-- html2canvas for exporting OMR as Image -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+    <style>
+        :root {
+            --bg-color: #f4f6f9;
+            --bubble-selected: #7f8c8d; /* Light black/gray */
+            --bubble-locked: #1e272e;   /* Dark black */
+            --bubble-review: #2980b9;   /* Review Blue */
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            margin: 0;
+            padding: 0;
+            background-color: var(--bg-color);
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+        }
+
+        header {
+            background: #2c3e50;
+            color: #fff;
+            padding: 10px 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .controls {
+            display: flex;
+            gap: 15px;
+            align-items: center;
+        }
+
+        #timer {
+            font-size: 1.2rem;
+            font-weight: bold;
+            color: #f1c40f;
+            background: #0002;
+            padding: 5px 12px;
+            border-radius: 4px;
+        }
+
+        .container {
+            display: flex;
+            flex-direction: column;
+            flex: 1;
+            overflow: hidden;
+        }
+
+        /* Question Paper Display */
+        #paper-viewer {
+            flex: 1;
+            border-bottom: 3px solid #ccc;
+            background: #fff;
+            overflow: auto;
+            padding: 15px;
+            position: relative;
+        }
+
+        #paper-viewer embed, #paper-viewer iframe {
+            width: 100%;
+            height: 100%;
+            border: none;
+        }
+
+        /* Digi OMR Grid Display */
+        #omr-container {
+            height: 45vh;
+            background: #ffffff;
+            padding: 15px;
+            overflow-y: auto;
+            box-shadow: 0 -2px 10px rgba(0,0,0,0.1);
+        }
+
+        .omr-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+            gap: 12px;
+        }
+
+        .omr-row {
+            display: flex;
+            align-items: center;
+            background: #f8f9fa;
+            padding: 6px 12px;
+            border-radius: 6px;
+            border: 1px solid #e2e8f0;
+            user-select: none;
+        }
+
+        .q-num {
+            width: 45px;
+            font-weight: bold;
+            cursor: pointer;
+            padding: 4px;
+            border-radius: 4px;
+            text-align: center;
+            background: #e9ecef;
+            margin-right: 10px;
+        }
+
+        .q-num.marked-review {
+            background-color: var(--bubble-review);
+            color: white;
+        }
+
+        .options {
+            display: flex;
+            gap: 12px;
+        }
+
+        .bubble {
+            width: 32px;
+            height: 32px;
+            border-radius: 50%;
+            border: 2px solid #7f8c8d;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            background: #fff;
+        }
+
+        .bubble.selected {
+            background-color: var(--bubble-selected);
+            color: #fff;
+            border-color: var(--bubble-selected);
+        }
+
+        .bubble.locked {
+            background-color: var(--bubble-locked) !important;
+            color: #fff !important;
+            border-color: var(--bubble-locked) !important;
+            box-shadow: inset 0 0 5px rgba(255,255,255,0.5);
+        }
+
+        /* Config Modal / Setup Bar */
+        #setup-bar {
+            padding: 10px 20px;
+            background: #ecf0f1;
+            display: flex;
+            gap: 15px;
+            flex-wrap: wrap;
+            align-items: center;
+        }
+
+        button {
+            cursor: pointer;
+            padding: 6px 14px;
+            background: #27ae60;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            font-weight: bold;
+        }
+
+        button:hover { background: #219150; }
+    </style>
+</head>
+<body>
+
+<header>
+    <h2>Digi OMR Practice Simulator</h2>
+    <div id="timer">Time Remaining: 00:00</div>
+</header>
+
+<div id="setup-bar">
+    <label>Load Question Paper (PDF/TXT/JSON/MD): 
+        <input type="file" id="fileInput" accept=".pdf,.txt,.md,.json">
+    </label>
+    <label>Test Mode:
+        <select id="testMode" onchange="setupTestMode()">
+            <option value="120-90">120 Questions (90 Min)</option>
+            <option value="60-45">60 Questions (45 Min)</option>
+            <option value="30-22.5">30 Questions (22.5 Min)</option>
+        </select>
+    </label>
+    <button onclick="startTest()">Start Test</button>
+</div>
+
+<div class="container">
+    <div id="paper-viewer">
+        <p style="text-align:center; color:#7f8c8d; margin-top: 50px;">
+            Upload a question paper above to view it here.
+        </p>
+    </div>
+
+    <div id="omr-container">
+        <div id="omrGrid" class="omr-grid"></div>
+    </div>
+</div>
+
+<div style="padding: 10px 20px; background: #fff; display: flex; justify-content: space-between;">
+    <div>
+        <label><input type="checkbox" id="enableNegative"> Enable Marking (+1 / -0.25)</label>
+    </div>
+    <div>
+        <button onclick="submitTest()" style="background:#c0392b;">Submit Test</button>
+        <button onclick="exportAsTXT()" style="background:#2980b9;">Download TXT</button>
+        <button onclick="exportAsImage()" style="background:#8e44ad;">Download Image</button>
+    </div>
+</div>
+
+<script>
+    let totalQuestions = 120;
+    let timeInMinutes = 90;
+    let timerInterval = null;
+    let omrData = {}; // Stores state: { qNum: { selected: 'A', locked: false, review: false } }
+
+    function setupTestMode() {
+        const mode = document.getElementById('testMode').value.split('-');
+        totalQuestions = parseInt(mode[0]);
+        timeInMinutes = parseFloat(mode[1]);
+        renderOMR();
+    }
+
+    function renderOMR() {
+        const grid = document.getElementById('omrGrid');
+        grid.innerHTML = '';
+        omrData = {};
+
+        for (let i = 1; i <= totalQuestions; i++) {
+            omrData[i] = { selected: null, locked: false, review: false };
+
+            const row = document.createElement('div');
+            row.className = 'omr-row';
+
+            const qNum = document.createElement('div');
+            qNum.className = 'q-num';
+            qNum.innerText = i;
+            
+            // Gesture: Long press question number (1.5s) to Mark for Review
+            attachLongPress(qNum, () => toggleReview(i, qNum), 1500);
+
+            const optionsDiv = document.createElement('div');
+            optionsDiv.className = 'options';
+
+            ['A', 'B', 'C', 'D'].forEach(opt => {
+                const bubble = document.createElement('div');
+                bubble.className = 'bubble';
+                bubble.innerText = opt;
+                bubble.dataset.q = i;
+                bubble.dataset.opt = opt;
+
+                // Click / Tap Handler
+                bubble.addEventListener('click', (e) => handleTap(i, opt, bubble));
+
+                // Gesture: 2-second Hold to Lock/Unlock
+                attachLongPress(bubble, () => toggleLock(i, opt, bubble), 2000);
+
+                optionsDiv.appendChild(bubble);
+            });
+
+            row.appendChild(qNum);
+            row.appendChild(optionsDiv);
+            grid.appendChild(row);
+        }
+    }
+
+    function handleTap(q, opt, el) {
+        if (omrData[q].locked) return; // Ignore taps if option is locked
+
+        const parent = el.parentElement;
+        parent.querySelectorAll('.bubble').forEach(b => b.classList.remove('selected'));
+
+        if (omrData[q].selected === opt) {
+            omrData[q].selected = null; // Unselect if tapped again
+        } else {
+            omrData[q].selected = opt;
+            el.classList.add('selected');
+        }
+    }
+
+    function toggleLock(q, opt, el) {
+        if (!omrData[q].selected || omrData[q].selected !== opt) return; // Only lock if currently selected
+
+        omrData[q].locked = !omrData[q].locked;
+        if (omrData[q].locked) {
+            el.classList.add('locked');
+        } else {
+            el.classList.remove('locked');
+        }
+    }
+
+    function toggleReview(q, el) {
+        omrData[q].review = !omrData[q].review;
+        el.classList.toggle('marked-review', omrData[q].review);
+    }
+
+    // Helper for Press & Hold Gesture
+    function attachLongPress(element, callback, duration) {
+        let timer = null;
+
+        const start = () => {
+            timer = setTimeout(callback, duration);
+        };
+
+        const cancel = () => {
+            if (timer) clearTimeout(timer);
+        };
+
+        element.addEventListener('mousedown', start);
+        element.addEventListener('touchstart', start);
+
+        element.addEventListener('mouseup', cancel);
+        element.addEventListener('mouseleave', cancel);
+        element.addEventListener('touchend', cancel);
+    }
+
+    // File Upload Handler (PDF / TXT / Markdown)
+    document.getElementById('fileInput').addEventListener('change', function(e) {
+        const file = e.target.files[0];
+        if (!file) return;
+
+        const viewer = document.getElementById('paper-viewer');
+        viewer.innerHTML = '';
+
+        if (file.type === 'application/pdf') {
+            const embed = document.createElement('embed');
+            embed.src = URL.createObjectURL(file);
+            embed.type = 'application/pdf';
+            viewer.appendChild(embed);
+        } else {
+            const reader = new FileReader();
+            reader.onload = function(evt) {
+                const pre = document.createElement('pre');
+                pre.style.whiteSpace = 'pre-wrap';
+                pre.innerText = evt.target.result;
+                viewer.appendChild(pre);
+            };
+            reader.readAsText(file);
+        }
+    });
+
+    // Timer Logic
+    function startTest() {
+        let totalSeconds = timeInMinutes * 60;
+        clearInterval(timerInterval);
+
+        timerInterval = setInterval(() => {
+            const mins = Math.floor(totalSeconds / 60);
+            const secs = Math.floor(totalSeconds % 60);
+
+            document.getElementById('timer').innerText = 
+                `Time Remaining: ${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
+
+            if (totalSeconds <= 0) {
+                clearInterval(timerInterval);
+                alert("Time up! Submitting test...");
+                submitTest();
+            }
+            totalSeconds--;
+        }, 1000);
+    }
+
+    function submitTest() {
+        clearInterval(timerInterval);
+        alert("Test Submitted successfully!");
+    }
+
+    // Export Options
+    function exportAsTXT() {
+        let content = "HPRCA Digi OMR - Response Sheet\n";
+        content += "=================================\n\n";
+        for (let q in omrData) {
+            content += `Q${q}: Option =${omrData[q].selected || 'Unattempted'} | Locked = ${omrData[q].locked} \vert{} Review =${omrData[q].review}\n`;
+        }
+
+        const blob = new Blob([content], { type: 'text/plain' });
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = `Digi_OMR_Responses_${Date.now()}.txt`;
+        a.click();
+    }
+
+    function exportAsImage() {
+        html2canvas(document.getElementById('omr-container')).then(canvas => {
+            const a = document.createElement('a');
+            a.href = canvas.toDataURL('image/png');
+            a.download = `Digi_OMR_Sheet_${Date.now()}.png`;
+            a.click();
+        });
+    }
+
+    // Initialize default state
+    setupTestMode();
+</script>
+</body>
+</html>
