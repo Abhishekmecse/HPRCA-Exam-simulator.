@@ -6,7 +6,7 @@
     <title>HPRCA Digi OMR Simulator</title>
     <!-- html2canvas for exporting image -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
-    <!-- PDF.js for rendering PDFs inside mobile browsers -->
+    <!-- PDF.js for rendering PDFs directly inline -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.min.js"></script>
     <style>
         :root {
@@ -29,6 +29,7 @@
             flex-direction: column;
             height: 100vh;
             overflow: hidden;
+            user-select: none;
         }
 
         header {
@@ -65,11 +66,14 @@
             flex-direction: column;
             flex: 1;
             overflow: hidden;
+            position: relative;
         }
 
-        /* Question Paper Viewer */
+        /* Question Paper Panel */
         #paper-viewer {
-            flex: 1;
+            height: 50%; /* Default 50% split */
+            min-height: 15%;
+            max-height: 85%;
             background: #525659;
             overflow-y: auto;
             padding: 10px;
@@ -86,23 +90,38 @@
             height: auto !important;
         }
 
+        /* Drag Resizer Divider Bar */
+        #resizer {
+            height: 10px;
+            background: #34495e;
+            cursor: ns-resize;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 10;
+        }
+
+        #resizer::after {
+            content: "•••";
+            color: #ecf0f1;
+            font-size: 12px;
+            letter-spacing: 2px;
+        }
+
         /* Digi OMR Container */
         #omr-container {
-            height: 48vh;
+            flex: 1;
             background: #ffffff;
             padding: 10px;
             overflow-x: auto;
             overflow-y: auto;
-            border-top: 3px solid #2c3e50;
-            box-shadow: 0 -2px 10px rgba(0,0,0,0.1);
         }
 
-        /* Column-first Vertical Question Sequence Grid */
+        /* Strict Vertical Column Grid Logic */
         .omr-grid {
             display: grid;
             grid-auto-flow: column;
-            grid-template-rows: repeat(10, auto); /* 10 items per vertical column */
-            gap: 8px 20px;
+            gap: 6px 25px;
             width: max-content;
         }
 
@@ -110,23 +129,22 @@
             display: flex;
             align-items: center;
             background: #f8f9fa;
-            padding: 4px 8px;
+            padding: 3px 6px;
             border-radius: 6px;
             border: 1px solid #e2e8f0;
-            user-select: none;
-            width: 240px;
+            width: 230px;
         }
 
         .q-num {
             width: 36px;
             font-weight: bold;
             cursor: pointer;
-            padding: 4px 0;
+            padding: 3px 0;
             border-radius: 4px;
             text-align: center;
             background: #e9ecef;
             margin-right: 8px;
-            font-size: 0.9rem;
+            font-size: 0.85rem;
         }
 
         .q-num.marked-review {
@@ -136,12 +154,12 @@
 
         .options {
             display: flex;
-            gap: 8px;
+            gap: 6px;
         }
 
         .bubble {
-            width: 30px;
-            height: 30px;
+            width: 28px;
+            height: 28px;
             border-radius: 50%;
             border: 2px solid #7f8c8d;
             display: flex;
@@ -151,7 +169,7 @@
             cursor: pointer;
             transition: all 0.15s ease;
             background: #fff;
-            font-size: 0.85rem;
+            font-size: 0.8rem;
         }
 
         .bubble.selected {
@@ -211,12 +229,15 @@
     <button onclick="startTest()">Start Test</button>
 </div>
 
-<div class="container">
+<div class="container" id="mainContainer">
     <div id="paper-viewer">
         <p style="text-align:center; color:#fff; margin-top: 40px;">
             Please upload your question paper above.
         </p>
     </div>
+
+    <!-- Draggable Split Handle -->
+    <div id="resizer"></div>
 
     <div id="omr-container">
         <div id="omrGrid" class="omr-grid"></div>
@@ -237,7 +258,6 @@
 </footer>
 
 <script>
-    // Initialize PDF.js worker
     pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.worker.min.js';
 
     let totalQuestions = 120;
@@ -257,8 +277,8 @@
         grid.innerHTML = '';
         omrData = {};
 
-        // Set vertical columns of 10 rows each
-        const rowsPerCol = 10;
+        // Column 1 = 1 to (Total/2), Column 2 = (Total/2)+1 to Total
+        const rowsPerCol = Math.ceil(totalQuestions / 2);
         grid.style.gridTemplateRows = `repeat(${rowsPerCol}, auto)`;
 
         for (let i = 1; i <= totalQuestions; i++) {
@@ -271,7 +291,6 @@
             qNum.className = 'q-num';
             qNum.innerText = i;
 
-            // Long Press (1.5s) to Mark for Review
             attachLongPress(qNum, () => toggleReview(i, qNum), 1500);
 
             const optionsDiv = document.createElement('div');
@@ -282,10 +301,7 @@
                 bubble.className = 'bubble';
                 bubble.innerText = opt;
 
-                // Click/Tap Selection
                 bubble.addEventListener('click', () => handleTap(i, opt, bubble));
-
-                // 2-Second Long Press for Lock/Unlock
                 attachLongPress(bubble, () => toggleLock(i, opt, bubble), 2000);
 
                 optionsDiv.appendChild(bubble);
@@ -325,12 +341,8 @@
 
     function attachLongPress(element, callback, duration) {
         let timer = null;
-        const start = (e) => {
-            timer = setTimeout(callback, duration);
-        };
-        const cancel = () => {
-            if (timer) clearTimeout(timer);
-        };
+        const start = () => { timer = setTimeout(callback, duration); };
+        const cancel = () => { if (timer) clearTimeout(timer); };
 
         element.addEventListener('mousedown', start);
         element.addEventListener('touchstart', start, { passive: true });
@@ -339,7 +351,34 @@
         element.addEventListener('touchend', cancel);
     }
 
-    // Canvas PDF Rendering Engine for Mobile Devices
+    // Draggable Split Screen Handler
+    const resizer = document.getElementById('resizer');
+    const paperViewer = document.getElementById('paper-viewer');
+    const container = document.getElementById('mainContainer');
+
+    let isDragging = false;
+
+    const startDrag = () => { isDragging = true; };
+    const endDrag = () => { isDragging = false; };
+    const doDrag = (e) => {
+        if (!isDragging) return;
+        const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+        const containerRect = container.getBoundingClientRect();
+        const newHeightPct = ((clientY - containerRect.top) / containerRect.height) * 100;
+
+        if (newHeightPct > 15 && newHeightPct < 85) {
+            paperViewer.style.height = `${newHeightPct}%`;
+        }
+    };
+
+    resizer.addEventListener('mousedown', startDrag);
+    resizer.addEventListener('touchstart', startDrag);
+    document.addEventListener('mousemove', doDrag);
+    document.addEventListener('touchmove', doDrag);
+    document.addEventListener('mouseup', endDrag);
+    document.addEventListener('touchend', endDrag);
+
+    // Render PDF on Canvas
     document.getElementById('fileInput').addEventListener('change', function(e) {
         const file = e.target.files[0];
         if (!file) return;
@@ -361,13 +400,9 @@
 
                             canvas.height = viewport.height;
                             canvas.width = viewport.width;
-
                             viewer.appendChild(canvas);
 
-                            page.render({
-                                canvasContext: context,
-                                viewport: viewport
-                            });
+                            page.render({ canvasContext: context, viewport: viewport });
                         });
                     }
                 });
@@ -411,11 +446,43 @@
         alert("Test Submitted!");
     }
 
+    // Reader-Friendly TXT Summary Export
     function exportAsTXT() {
-        let content = "HPRCA Digi OMR - Response Sheet\n=================================\n\n";
+        let attempted = 0, lockedCount = 0, reviewCount = 0;
+        
         for (let q in omrData) {
-            content += `Q${q}: Answer = ${omrData[q].selected || 'Unattempted'} | Locked = ${omrData[q].locked} | Review = ${omrData[q].review}\n`;
+            if (omrData[q].selected) attempted++;
+            if (omrData[q].locked) lockedCount++;
+            if (omrData[q].review) reviewCount++;
         }
+
+        let content = "===========================================\n";
+        content += "     HPRCA DIGI OMR RESPONSE SHEET          \n";
+        content += "===========================================\n";
+        content += `Date/Time         : ${new Date().toLocaleString()}\n`;
+        content += `Total Questions   : ${totalQuestions}\n`;
+        content += `Attempted         : ${attempted}\n`;
+        content += `Unattempted       : ${totalQuestions - attempted}\n`;
+        content += `Locked Answers    : ${lockedCount}\n`;
+        content += `Marked for Review : ${reviewCount}\n`;
+        content += "-------------------------------------------\n\n";
+
+        content += "  Q.No | Answer | Status\n";
+        content += "  -----------------------------\n";
+
+        for (let q = 1; q <= totalQuestions; q++) {
+            const qStr = String(q).padStart(5, ' ');
+            const ansStr = (omrData[q].selected || '-').padStart(6, ' ');
+            
+            let status = [];
+            if (omrData[q].locked) status.push("Locked");
+            if (omrData[q].review) status.push("Review");
+            if (!omrData[q].selected) status.push("Unattempted");
+            if (omrData[q].selected && !omrData[q].locked && !omrData[q].review) status.push("Saved");
+
+            content += `${qStr} | ${ansStr} | ${status.join(', ')}\n`;
+        }
+
         const blob = new Blob([content], { type: 'text/plain' });
         const a = document.createElement('a');
         a.href = URL.createObjectURL(blob);
